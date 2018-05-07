@@ -1,0 +1,71 @@
+---
+
+- name: playbook for link clone avi-perf-server
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    vcenter_provider:
+      hostname: 10.68.116.150
+      validate_certs: no
+      datacenter: "Cisco Thailand Lab"
+      esxihost: ciscolab003.ciscoth.com
+      cluster: "Compute Cluster"
+      folder: AviPerfServer
+      
+    aci:  
+      tenant: common
+      ap: ansible_aci_001
+      epg: Ansible_WEB
+
+    source_vm:
+      name: 'avi-perf-server'
+      network_name: 'VM Network'
+
+    new_hosts:
+      - hostname: ACIWEB01
+      - hostname: ACIWEB02
+
+  tasks:
+    - name: Deploy guests from a template avi-perf-server/init
+      with_items: 
+        - "{{ new_hosts }}"
+      vsphere_guest:
+        vcenter_hostname: "{{ vcenter_provider.hostname }}"
+        validate_certs: "{{ vcenter_provider.validate_certs }}"
+        username: "{{ vcuser }}"
+        password: "{{ vcpass }}"
+        guest: "{{ item.hostname }}"
+        from_template: yes
+        template_src: "{{ source_vm.name }}"
+        snapshot_to_clone: init
+        vm_nic:
+          nic2:
+            network: "{{ aci.tenant }}|{{ aci.ap }}|{{ aci.epg }}"
+        esxi:
+          datacenter: "{{ vcenter_provider.datacenter }}"
+          hostname: "{{ vcenter_provider.esxihost }}"
+        vm_extra_config:
+          folder: "{{ vcenter_provider.folder }}"
+
+    - name: re-configure nic to epg {{ aci.tenant }}|{{ aci.ap }}|{{ aci.epg }}
+      with_items: 
+        - "{{ new_hosts }}"
+      vsphere_guest:
+        vcenter_hostname: "{{ vcenter_provider.hostname }}"
+        validate_certs: "{{ vcenter_provider.validate_certs }}"
+        username: "{{ vcuser }}"
+        password: "{{ vcpass }}"
+        guest: "{{ item.hostname }}"
+        state: reconfigured
+        vm_nic:
+          nic2:
+            type: e1000
+            network: "{{ aci.tenant }}|{{ aci.ap }}|{{ aci.epg }}"
+            network_type: dvs
+        esxi:
+          datacenter: "{{ vcenter_provider.datacenter }}"
+          hostname: "{{ vcenter_provider.esxihost }}"
+      
+

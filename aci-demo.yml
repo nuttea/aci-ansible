@@ -1,0 +1,275 @@
+---
+
+- name: playbook for aci provisioning
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    aci_vars:
+      apic_hostname: 10.68.116.250
+      tenant: common
+      ap: ansible_aci_001
+      vrf: default
+      l3out: default
+      bds:
+        - { bd: DevNet-BD1, gw: 172.30.1.1, mask: 24, profl3out: default, scope: shared}
+      epgs:
+        - { epg: Ansible_WEB, bd: DevNet-BD1, desc: Web EPG, priority: level2, domain: ACI_DVS }
+        - { epg: Ansible_DB, bd: DevNet-BD1, desc: DB EPG, priority: level2, domain: ACI_DVS }
+      filters:
+        - { filter: Ansible_WEB_Filter }
+        - { filter: Ansible_DB_Filter }
+      filter_entrys:
+        - { dst_port: 80, action: permit, filter: Ansible_WEB_Filter, entry: permit_http, ether_type: ip, ip_protocol: tcp}
+        - { dst_port: 443, action: permit, filter: Ansible_WEB_Filter, entry: permit_https, ether_type: ip, ip_protocol: tcp}
+        - { dst_port: 3306, action: permit, filter: Ansible_DB_Filter, entry: permit_mysql, ether_type: ip, ip_protocol: tcp}
+      contracts:
+        - { contract: ansible_ext_to_web, subject: ansible_web_subj, filter: Ansible_WEB_Filter}
+        - { contract: ansible_web_to_db, subject: ansible_db_subj, filter: Ansible_DB_Filter}
+      consumers:
+        - { consumer: Ansible_WEB, contract: ansible_web_to_db }
+      providers:
+        - { provider: Ansible_WEB, contract: ansible_ext_to_web }
+        - { provider: Ansible_DB, contract: ansible_web_to_db }
+      l3out_consumers:
+        - { consumer: defaultInstP, contract: ansible_ext_to_web }
+      vlb:
+        - { sg_template: AviLBUnmanaged, contract: ansible_ext_to_web, subject: ansible_web_subj }
+
+
+  tasks:
+    - name: 'ensure tenant "{{ aci_vars.tenant }}" exists'
+      aci_tenant: 
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        state: present
+        validate_certs: no
+    
+    - name: 'ensure VRF "{{ aci_vars.vrf }}" exists'
+      aci_vrf:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        vrf: "{{ aci_vars.vrf }}"
+        state: present
+        validate_certs: no
+    
+    - name: 'ensure application profile "{{ aci_vars.ap }}" exists'
+      aci_ap:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        ap: "{{ aci_vars.ap }}"
+        description: 'aci ansible application profile'
+        state: present
+        validate_certs: no
+    
+    - name: 'ensure BDs "{{ aci_vars.bds }}" exists'
+      with_items: 
+        - "{{ aci_vars.bds }}"
+      aci_bd:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        vrf: "{{ aci_vars.vrf }}"
+        bd: "{{ item.bd }}"
+        state: present
+        validate_certs: no
+    
+    - name: 'ensure BD Subnets "{{ aci_vars.bds }}" exists'
+      with_items: 
+        - "{{ aci_vars.bds }}"
+      aci_bd_subnet:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        bd: "{{ item.bd }}"
+        gateway: "{{ item.gw }}"
+        mask: "{{ item.mask }}"
+        route_profile_l3_out: "{{ item.profl3out }}"
+        scope: "{{ item.scope }}"
+        state: present
+        validate_certs: no
+    
+    - name: 'ensure BD Subnets associate with L3Out "{{ aci_vars.bds }}" exists'
+      with_items: 
+        - "{{ aci_vars.bds }}"
+      aci_bd_to_l3out:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        bd: "{{ item.bd }}"
+        l3out: "{{ item.profl3out }}"
+        state: present
+        validate_certs: no
+    
+    - name: 'ensure endpoint groups "{{ aci_vars.epgs }}" exists'
+      with_items: 
+        - "{{ aci_vars.epgs }}"
+      aci_epg:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        ap: "{{ aci_vars.ap }}"
+        epg: "{{ item.epg }}"
+        bd: "{{ item.bd }}"
+        priority: "{{ item.priority }}"
+        description: "{{ item.desc }}"
+        state: present
+        validate_certs: no
+    
+    - name: 'ensure endpoint group to domain bindings "{{ aci_vars.epgs }}" exists'
+      with_items: 
+        - "{{ aci_vars.epgs }}"
+      aci_epg_to_domain:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        ap: "{{ aci_vars.ap }}"
+        epg: "{{ item.epg }}"
+        domain: "{{ item.domain }}"
+        domain_type: vmm
+        vm_provider: vmware
+        state: present
+        validate_certs: no
+   
+    - name: 'ensure Filters "{{ aci_vars.filters }}" exists'
+      with_items: 
+        - "{{ aci_vars.filters }}"
+      aci_filter:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        filter: "{{ item.filter }}"
+        state: present
+        validate_certs: no
+
+    - name: 'ensure filter entrys "{{ aci_vars.filter_entrys }}" exists'
+      with_items: 
+        - "{{ aci_vars.filter_entrys }}"
+      aci_filter_entry:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        filter: "{{ item.filter }}"
+        entry: "{{ item.entry }}"
+        ether_type: "{{ item.ether_type }}"
+        dst_port: "{{ item.dst_port }}"
+        ip_protocol: "{{ item.ip_protocol }}"
+        state: present
+        validate_certs: no
+
+    - name: 'ensure contracts "{{ aci_vars.contracts }}" exists'
+      with_items: 
+        - "{{ aci_vars.contracts }}"
+      aci_contract:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        contract: "{{ item.contract }}"
+        state: present
+        validate_certs: no
+    
+    - name: 'ensure contract subjects "{{ aci_vars.contracts }}" exists'
+      with_items: 
+        - "{{ aci_vars.contracts }}"
+      aci_contract_subject:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        contract: "{{ item.contract }}"
+        subject: "{{ item.subject }}"
+        state: present
+        validate_certs: no
+
+    - name: 'ensure subject to filter bindings "{{ aci_vars.contracts }}" exists'
+      with_items: 
+        - "{{ aci_vars.contracts }}"
+      aci_contract_subject_to_filter:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        contract: "{{ item.contract }}"
+        subject: "{{ item.subject }}"
+        filter: "{{ item.filter }}"
+        state: present
+        validate_certs: no
+
+    - name: 'ensure epg to contract bindings (consumer) "{{ aci_vars.contracts }}" exists'
+      with_items: 
+        - "{{ aci_vars.consumers }}"
+      aci_epg_to_contract:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        ap: "{{ aci_vars.ap }}"
+        contract: "{{ item.contract }}"
+        contract_type: consumer
+        epg: "{{ item.consumer }}"
+        state: present
+        validate_certs: no
+
+    - name: 'ensure epg to contract bindings (provider) "{{ aci_vars.contracts }}" exists'
+      with_items: 
+        - "{{ aci_vars.providers }}"
+      aci_epg_to_contract:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        tenant: "{{ aci_vars.tenant }}"
+        ap: "{{ aci_vars.ap }}"
+        contract: "{{ item.contract }}"
+        contract_type: provider
+        epg: "{{ item.provider }}"
+        state: present
+        validate_certs: no
+
+    - name: 'ensure L3out binding to contract "{{ aci_vars.l3out_consumers }}" exists'
+      with_items: 
+        - "{{ aci_vars.l3out_consumers }}"
+      aci_rest:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        validate_certs: no
+        path: '/api/node/mo/uni/tn-{{ aci_vars.tenant }}/out-{{ aci_vars.l3out }}/instP-{{ item.consumer }}.json'
+        method: post
+        content:
+          fvRsCons:
+            attributes:
+              tnVzBrCPName: "{{ item.contract }}"
+              status: created,modified
+
+    - name: 'ensure LB Service Graph bind to contract "{{ aci_vars.vlb }}" exists'
+      with_items: 
+        - "{{ aci_vars.vlb }}"
+      aci_rest:
+        hostname: "{{ aci_vars.apic_hostname }}"
+        username: "{{ apic_username }}"
+        password: "{{ apic_password }}"
+        validate_certs: no
+        path: '/api/node/mo/uni/tn-{{ aci_vars.tenant }}/brc-{{ item.contract }}/subj-{{ item.subject }}/rsSubjGraphAtt.json'
+        method: post
+        content:
+          vzRsSubjGraphAtt:
+            attributes:
+              tnVnsAbsGraphName: "{{ item.sg_template }}"
+              status: created,modified
+          
+      

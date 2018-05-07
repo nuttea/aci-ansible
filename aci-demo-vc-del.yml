@@ -1,0 +1,43 @@
+---
+
+- name: playbook for link clone avi-perf-server
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    vcenter_provider:
+      hostname: 10.68.116.150
+      validate_certs: no
+      datacenter: "Cisco Thailand Lab"
+      esxihost: ciscolab003.ciscoth.com
+      cluster: "Compute Cluster"
+      folder: AviPerfServer
+      
+    aci:  
+      tenant: common
+      ap: ansible_aci_001
+      epg: Ansible_WEB
+
+    source_vm:
+      name: 'avi-perf-server'
+      network_name: 'VM Network'
+
+    new_hosts:
+      - hostname: ACIWEB01
+      - hostname: ACIWEB02
+
+  tasks:
+    - name: Delete guests from a template avi-perf-server/init
+      with_items: 
+        - "{{ new_hosts }}"
+      vsphere_guest:
+        vcenter_hostname: "{{ vcenter_provider.hostname }}"
+        validate_certs: "{{ vcenter_provider.validate_certs }}"
+        username: "{{ vcuser }}"
+        password: "{{ vcpass }}"
+        guest: "{{ item.hostname }}"
+        state: absent
+        force: yes
+      
+
