@@ -1,0 +1,62 @@
+---
+
+- name: link clone centos7 for okd playbook
+  hosts: localhost
+  connection: local
+  gather_facts: False
+  vars_files:
+    - /root/external_vars.yml
+  vars:
+    vcenter_provider:
+      hostname: 192.168.20.4
+      validate_certs: no
+      datacenter: "SGP"
+      esxihost: hx-esx-1.cisco.demo
+      cluster: "HX"
+      folder: Centos7
+    aci:  
+      tenant: CloudCenter
+      ap: CloudCenter-AP
+      epg: CloudCenter-MGMT2
+    source_vm:
+      name: 'Centos7-template'
+      network_name: 'VM Network'
+    new_hosts:
+      - hostname: Centos701
+
+  tasks:
+    - name: Deploy guests from a template Centos7-template/ssh-copy-id
+      with_items: 
+        - "{{ new_hosts }}"
+      vmware_guest:
+        hostname: "{{ vcenter_provider.hostname }}"
+        validate_certs: "{{ vcenter_provider.validate_certs }}"
+        username: "{{ vc_username }}"
+        password: "{{ vc_password }}"
+        name: "{{ item.hostname }}"
+        template_src: "{{ source_vm.name }}"
+        datacenter: "{{ vcenter_provider.datacenter }}"
+        cluster: "{{ vcenter_provider.cluster }}"
+        folder: "/{{ vcenter_provider.folder }}"
+        state: present
+        networks:
+        - name: "{{ aci.tenant }}|{{ aci.ap }}|{{ aci.epg }}"
+          ip: 192.168.31.91
+          netmask: 255.255.255.0
+          gateway: 192.168.31.1
+          domain: cisco.demo
+          dns_servers:
+          - 192.168.20.2
+        wait_for_ip_address: True
+        customization:
+          domain: "cisco.demo"
+          dns_servers:
+            - 192.168.20.2
+          dns_suffix:
+            - cisco.demo
+      register: "r"
+
+    - name: New VM Info 2
+      debug:
+        msg: "{{ item.instance.hw_name }} {{ item.instance.ipv4 }}"
+      with_items: "{{ r.results }}"
